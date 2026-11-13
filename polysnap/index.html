@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polysnap</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #181a21; --line: #2a2d38; --text: #f3f1ec; --muted: #9a9ca8;
+    --accent: #f0932b; --left: #4ade80; --right: #ff7eb6; --good: #7bed9f; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { width: 100%; height: 100%; display: block; }
+  video { display: none; }
+
+  .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 16px; overflow: auto; background: rgba(14,15,19,.82); backdrop-filter: blur(10px); }
+  .screen[hidden] { display: none; }
+  .card { width: min(720px, 100%); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 18px; padding: 28px; margin: auto; }
+  h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+
+  .grid { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: stretch; }
+  .grid .head { color: var(--accent); font-weight: 600; text-align: center; padding: 4px; }
+  .grid .row { color: var(--accent); font-weight: 600; display: flex; align-items: center; padding-right: 8px; white-space: nowrap; }
+  .cell { background: #11131a; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 8px 6px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; transition: border-color .15s, transform .1s; }
+  .cell:hover { border-color: #555a6e; }
+  .cell[aria-pressed="true"] { border-color: var(--accent); background: #1d1810; }
+  .cell svg { width: 110px; height: 52px; }
+  .cell small { color: var(--muted); font-size: 12px; min-height: 17px; }
+
+  .opts { display: flex; flex-wrap: wrap; gap: 14px 24px; margin: 20px 0; align-items: center; }
+  .opt { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 6px 14px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #1a1205; font-weight: 600; }
+  input[type=range] { accent-color: var(--accent); width: 130px; }
+  input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+  .primary { background: var(--accent); color: #1a1205; font-weight: 700; border: 0; border-radius: 12px;
+    padding: 14px 22px; font-size: 17px; width: 100%; }
+  .primary:disabled { opacity: .5; cursor: default; }
+  .ghost { background: none; border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; width: 100%; }
+  .status { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 20px; text-align: center; }
+  .status.err { color: var(--bad); }
+  .how { color: var(--muted); font-size: 14px; margin: 0 0 16px; padding-left: 18px; }
+  .how li { margin: 2px 0; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud[hidden] { display: none; }
+  .hud-top { position: absolute; top: 14px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .pill { background: rgba(14,15,19,.72); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; backdrop-filter: blur(6px); }
+  .pill b { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .pill small { color: var(--muted); display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  #quit { pointer-events: auto; }
+  #progress { position: absolute; left: 0; bottom: 0; height: 5px; background: var(--accent); width: 0; }
+  #big { position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); font-size: 120px; font-weight: 800;
+    text-shadow: 0 4px 30px rgba(0,0,0,.6); }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
+  .stat { background: #11131a; border: 1px solid var(--line); border-radius: 12px; padding: 14px; text-align: center; }
+  .stat b { font-size: 28px; display: block; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--muted); }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 560px) {
+    .card { padding: 18px; } .cell svg { width: 80px; height: 40px; } .stats { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+<video id="cam" playsinline muted></video>
+
+<div id="hud" hidden>
+  <div class="hud-top">
+    <div class="pill"><small id="hudLevel">Level 1 · Easy</small><b id="hudScore">0</b></div>
+    <div class="pill" style="text-align:center"><small>Streak</small><b id="hudCombo">0</b></div>
+    <button id="quit" class="pill">Quit</button>
+  </div>
+  <div id="big"></div>
+  <div id="progress"></div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="card">
+    <h1>Poly<span>snap</span></h1>
+    <p class="sub">A bilateral coordination test. Each hand traces its own shape, one point per beat.</p>
+    <ol class="how">
+      <li>Stand back so both hands are in frame, index fingers up.</li>
+      <li>On every beat, snap each fingertip into the lit point's circle. How you get there doesn't matter.</li>
+      <li>Both hands start on point 1: left hand at the top, right hand at the bottom. Each shape loops at its own length.</li>
+      <li>Miss one beat with either hand and the round is over.</li>
+    </ol>
+    <div class="grid" id="grid"></div>
+    <div class="opts">
+      <div class="opt">Speed
+        <div class="seg" id="speed">
+          <button data-v="1" aria-pressed="true">Original · 136 BPM</button>
+          <button data-v="2" aria-pressed="false">Slow · 68 BPM</button>
+        </div>
+      </div>
+      <label class="opt"><input type="checkbox" id="click"> Metronome</label>
+      <label class="opt">Timing offset <input type="range" id="offset" min="-250" max="250" step="10" value="0"> <span id="offsetVal">0 ms</span></label>
+      <button class="ghost" id="calib" style="width:auto;padding:6px 14px;font-size:14px">Calibrate by tapping</button>
+    </div>
+    <div class="opts">
+      <span class="opt" id="introLabel"></span>
+      <button class="ghost" id="introSet" style="width:auto;padding:6px 14px;font-size:14px">Mark where the tune starts</button>
+    </div>
+    <button class="primary" id="start">Start</button>
+    <div class="status" id="status"></div>
+  </div>
+</div>
+
+<div id="calibScreen" class="screen" hidden>
+  <div class="card" style="text-align:center">
+    <h1 id="calibTitle">Tap along to the beat</h1>
+    <p class="sub" id="calibSub">Press Space or click on every beat you hear. This lines the game up with your speakers.</p>
+    <div class="stat" style="margin:18px 0"><b id="calibCount">0 / 16</b><small id="calibUnit">taps</small></div>
+    <button class="ghost" id="calibCancel">Cancel</button>
+  </div>
+</div>
+
+<div id="results" class="screen" hidden>
+  <div class="card">
+    <h1 id="resTitle">Nice work</h1>
+    <p class="sub" id="resSub"></p>
+    <div class="stats">
+      <div class="stat"><b id="resScore">0</b><small>Score</small></div>
+      <div class="stat"><b id="resLeft" style="color:var(--left)">0%</b><small>Left hand on the beat</small></div>
+      <div class="stat"><b id="resRight" style="color:var(--right)">0%</b><small>Right hand on the beat</small></div>
+      <div class="stat"><b id="resSync">0</b><small>Beats cleared</small></div>
+      <div class="stat"><b id="resStreak">0</b><small>Longest streak</small></div>
+      <div class="stat"><b id="resBest">0</b><small>Best score</small></div>
+    </div>
+    <p class="sub" id="resTiming" style="margin:0 0 12px;font-size:14px"></p>
+    <button class="ghost" id="resAdjust" hidden style="margin-bottom:10px"></button>
+    <div class="btns">
+      <button class="ghost" id="toMenu">Change level</button>
+      <button class="primary" id="again">Play again</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ---------- Music: beat grid measured from the track ----------
+const BEAT = { bpm: 136, first: 0.23 };
+const P = 60 / BEAT.bpm;                 // seconds per beat
+const COUNT_IN = 4;                      // steps before point 1
+
+// ---------- Shapes (unit coords, in the order you trace them) ----------
+const star = (() => { const p = []; for (const k of [0, 2, 4, 1, 3]) { const a = (-90 + 72 * k) * Math.PI / 180; p.push([Math.cos(a), Math.sin(a)]); } return p; })();
+const SHAPES = {
+  line:     { pts: [[0, -1], [0, 1]], closed: false },
+  triangle: { pts: [[-0.7, -1], [0.7, 1], [-0.7, 1]], closed: true },
+  square:   { pts: [[-0.85, -0.85], [0.85, -0.85], [0.85, 0.85], [-0.85, 0.85]], closed: true },
+  star:     { pts: star, closed: true },
+};
+// The hands start at opposite ends: the left shape starts at its top point, the right shape at its bottom point.
+// Same shape and same tracing order, just numbered from the lowest (then left-most) point.
+function fromBottom(shape) {
+  let k = 0;
+  shape.pts.forEach(([x, y], i) => { const [bx, by] = shape.pts[k]; if (y > by + 1e-6 || (Math.abs(y - by) < 1e-6 && x < bx)) k = i; });
+  return { ...shape, pts: [...shape.pts.slice(k), ...shape.pts.slice(0, k)] };
+}
+const LEVELS = {
+  easy:   [['line', 'line'], ['line', 'triangle'], ['line', 'square'], ['line', 'star']],
+  medium: [['triangle', 'line'], ['triangle', 'triangle'], ['triangle', 'square'], ['triangle', 'star']],
+};
+
+// ---------- State ----------
+const $ = (id) => document.getElementById(id);
+const cv = $('cv'), g = cv.getContext('2d'), cam = $('cam');
+const sel = { diff: 'easy', level: 0, div: 1 };
+let audioCtx, musicBuf, landmarker, camReady = false;
+let game = null;
+const tips = { L: null, R: null };       // smoothed fingertip positions in canvas px
+const trails = { L: [], R: [] };
+
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const bestKey = () => `best:${sel.diff}:${sel.level}:${sel.div}`;
+
+// ---------- Menu ----------
+function iconSVG(pair) {
+  const draw = (name, cx) => {
+    const s = SHAPES[name], r = 20;
+    const pts = s.pts.map(([x, y]) => `${(cx + x * r).toFixed(1)},${(26 + y * r).toFixed(1)}`).join(' ');
+    return s.closed ? `<polygon points="${pts}"/>` : `<polyline points="${pts}"/>`;
+  };
+  return `<svg viewBox="0 0 110 52" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">${draw(pair[0], 30)}${draw(pair[1], 80)}</svg>`;
+}
+function buildGrid() {
+  const grid = $('grid');
+  grid.innerHTML = '<div></div><div class="head">Easy</div><div class="head">Medium</div>';
+  for (let i = 0; i < 4; i++) {
+    grid.insertAdjacentHTML('beforeend', `<div class="row">Level ${i + 1}</div>`);
+    for (const diff of ['easy', 'medium']) {
+      const b = document.createElement('button');
+      b.className = 'cell'; b.dataset.diff = diff; b.dataset.level = i;
+      const best = store.get(`best:${diff}:${i}:${sel.div}`);
+      b.innerHTML = iconSVG(LEVELS[diff][i]) + `<small>${best ? 'Best ' + best : ''}</small>`;
+      b.onclick = () => { sel.diff = diff; sel.level = i; markGrid(); };
+      grid.appendChild(b);
+    }
+  }
+  markGrid();
+}
+function markGrid() {
+  document.querySelectorAll('.cell').forEach((c) =>
+    c.setAttribute('aria-pressed', c.dataset.diff === sel.diff && +c.dataset.level === sel.level));
+}
+$('speed').onclick = (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  sel.div = +b.dataset.v;
+  $('speed').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+  buildGrid();
+};
+$('offset').value = store.get('offset') ?? 0;
+const showOffset = () => { $('offsetVal').textContent = `${$('offset').value} ms`; store.set('offset', +$('offset').value); };
+$('offset').oninput = showOffset; showOffset();
+
+function setStatus(msg, err = false) { $('status').textContent = msg; $('status').classList.toggle('err', err); }
+
+// ---------- Setup: audio, camera, hand tracking ----------
+async function ensureAudio() {
+  audioCtx ??= new AudioContext();
+  await audioCtx.resume();
+  if (!musicBuf) {
+    const res = await fetch('assets/music.m4a');
+    musicBuf = await audioCtx.decodeAudioData(await res.arrayBuffer());
+  }
+}
+async function ensureCamera() {
+  if (camReady) return;
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 960, height: 540, frameRate: 30, facingMode: 'user' }, audio: false });
+  cam.srcObject = stream;
+  await cam.play();
+  camReady = true;
+}
+async function ensureTracker() {
+  if (landmarker) return;
+  const V = '0.10.14';
+  const { HandLandmarker, FilesetResolver } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${V}/vision_bundle.mjs`);
+  const files = await FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${V}/wasm`);
+  landmarker = await HandLandmarker.createFromOptions(files, {
+    baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'GPU' },
+    runningMode: 'VIDEO', numHands: 2,
+    minHandDetectionConfidence: 0.35, minHandPresenceConfidence: 0.35, minTrackingConfidence: 0.35,
+  });
+}
+
+$('start').onclick = async () => {
+  $('start').disabled = true;
+  try {
+    setStatus('Loading music…'); await ensureAudio();
+    setStatus('Turning on your camera…'); await ensureCamera();
+    setStatus('Loading hand tracking…'); await ensureTracker();
+    setStatus('');
+    startRound();
+  } catch (e) {
+    console.error(e);
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'NotFoundError');
+    setStatus(denied ? 'Camera access is needed to play. Allow it in your browser, then try again.' : `Couldn't start: ${e.message || e}`, true);
+  } finally { $('start').disabled = false; }
+};
+$('again').onclick = () => { $('results').hidden = true; startRound(); };
+$('toMenu').onclick = () => { $('results').hidden = true; buildGrid(); $('menu').hidden = false; };
+$('quit').onclick = () => { stopAudio(); game = null; $('hud').hidden = true; buildGrid(); $('menu').hidden = false; };
+
+// ---------- Tap calibration ----------
+// Plays the song; the average gap between your taps and the measured beat becomes the timing offset.
+let calib = null;
+// The song opens with an intro. The challenge waits it out and starts on the beat where the tune comes in.
+const introBeats = () => store.get('introBeats') ?? 8;
+function showIntro() { $('introLabel').textContent = `Challenge starts on beat ${introBeats() + 1} of the song (${(BEAT.first + introBeats() * P).toFixed(1)} s in)`; }
+showIntro();
+async function startCalib(mode = 'beat') {
+  await ensureAudio();
+  const src = audioCtx.createBufferSource(); src.buffer = musicBuf;
+  const gain = audioCtx.createGain(); gain.gain.value = 4;
+  src.connect(gain).connect(audioCtx.createDynamicsCompressor()).connect(audioCtx.destination);
+  const startAt = audioCtx.currentTime + 0.1; src.start(startAt);
+  calib = { src, startAt, taps: [], mode };
+  src.onended = () => endCalib(mode === 'beat');
+  const intro = mode === 'intro';
+  $('calibTitle').textContent = intro ? 'Mark where the tune starts' : 'Tap along to the beat';
+  $('calibSub').textContent = intro ? 'Press Space or click once, the moment the tune comes in. The challenge will start on that beat.' : 'Press Space or click on every beat you hear. This lines the game up with your speakers.';
+  $('calibCount').textContent = intro ? 'Listening' : '0 / 16'; $('calibUnit').textContent = intro ? 'press Space when the tune starts' : 'taps';
+  $('menu').hidden = true; $('calibScreen').hidden = false;
+}
+function tapCalib() {
+  if (!calib) return;
+  const t = audioNow() - calib.startAt - BEAT.first;
+  if (calib.mode === 'intro') {
+    const b = Math.min(24, Math.max(0, Math.round((t - $('offset').value / 1000 - 0.12) / P)));   // people press a touch late; snap to the beat
+    store.set('introBeats', b); showIntro(); endCalib(false);
+    return setStatus(`Got it. The challenge now starts on beat ${b + 1} of the song.`);
+  }
+  if (t < 0) return;
+  calib.taps.push(t);
+  $('calibCount').textContent = `${calib.taps.length} / 16`;
+  if (calib.taps.length >= 16) endCalib(true);
+}
+function endCalib(apply) {
+  if (!calib) return;
+  const c = calib; calib = null; c.src.onended = null; try { c.src.stop(); } catch {}
+  $('calibScreen').hidden = true; $('menu').hidden = false;
+  const taps = c.taps.slice(3);                                 // the first few taps are warm-up
+  if (!apply) return;
+  if (taps.length < 6) return setStatus('Not enough taps to calibrate. Try again and tap on every beat.', true);
+  let sx = 0, sy = 0;                                           // circular mean of each tap's position within the beat
+  for (const t of taps) { const a = (t / P) * 2 * Math.PI; sx += Math.cos(a); sy += Math.sin(a); }
+  const ms = Math.round((Math.atan2(sy, sx) / (2 * Math.PI)) * P * 100) * 10;
+  const steady = Math.hypot(sx, sy) / taps.length;
+  if (steady < 0.5) return setStatus('Those taps were too uneven to calibrate. Try again.', true);
+  $('offset').value = ms; showOffset();
+  setStatus(`Timing offset set to ${$('offset').value} ms.`);
+}
+$('introSet').onclick = () => startCalib('intro').catch((e) => setStatus(`Couldn't start: ${e.message || e}`, true));
+$('calib').onclick = () => startCalib().catch((e) => setStatus(`Couldn't start: ${e.message || e}`, true));
+$('calibCancel').onclick = (e) => { e.stopPropagation(); endCalib(false); };
+$('calibScreen').addEventListener('pointerdown', (e) => { if (e.target.id !== 'calibCancel') tapCalib(); });
+addEventListener('keydown', (e) => { if (calib && e.code === 'Space') { e.preventDefault(); if (!e.repeat) tapCalib(); } });
+
+// ---------- Round ----------
+function startRound() {
+  const [ln, rn] = LEVELS[sel.diff][sel.level];
+  const stepDur = P * sel.div;
+  // One round = one play of the song. The intro is idle: the count-in runs over its last beats, and point 1 is the beat where the tune comes in.
+  const intro = introBeats(), introDur = BEAT.first + intro * P, lead = COUNT_IN * stepDur;
+  const songBeats = Math.floor((musicBuf.duration - BEAT.first - 0.1) / P) + 1 - intro;
+  const steps = Math.ceil(songBeats / sel.div);
+  const startAt = audioCtx.currentTime + 0.15 + Math.max(0, introDur - lead);   // first count-in tick
+
+  const src = audioCtx.createBufferSource();
+  src.buffer = musicBuf;
+  const gain = audioCtx.createGain(); gain.gain.value = 4;          // source clip is quiet
+  const comp = audioCtx.createDynamicsCompressor();
+  src.connect(gain).connect(comp).connect(audioCtx.destination);
+  src.start(Math.max(audioCtx.currentTime, startAt + lead - introDur));
+
+  // Ticks: always during count-in, optional afterwards.
+  const tickAll = $('click').checked;
+  const ticks = [];
+  for (let j = -COUNT_IN; j < steps; j++) {
+    if (j >= 0 && !tickAll) break;
+    const t = startAt + (j + COUNT_IN) * stepDur;
+    const o = audioCtx.createOscillator(), og = audioCtx.createGain();
+    o.frequency.value = j === 0 ? 1320 : j < 0 ? 880 : 660;
+    og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.25, t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    o.connect(og).connect(audioCtx.destination); o.start(t); o.stop(t + 0.08); ticks.push(o);
+  }
+
+  game = {
+    shapes: { L: SHAPES[ln], R: fromBottom(SHAPES[rn]) },
+    stepDur, steps, startAt, src, gain, ticks,
+    judged: -1, score: 0, combo: 0, maxCombo: 0, sync: 0,
+    hits: { L: 0, R: 0 },                       // perfect = 1, good = 0.5
+    grade: { L: null, R: null }, early: { L: false, R: false }, arr: { L: null, R: null }, acc: { L: [], R: [] },
+    meas: { L: { m: -1, inZ: false, done: false }, R: { m: -1, inZ: false, done: false } }, errs: [], shift: 0, frames: 0, t0: performance.now(),
+    flashes: [],
+  };
+  trails.L.length = trails.R.length = 0;
+  $('hudLevel').textContent = `Level ${sel.level + 1} · ${sel.diff === 'easy' ? 'Easy' : 'Medium'}`;
+  $('hudScore').textContent = '0'; $('hudCombo').textContent = '0';
+  $('menu').hidden = true; $('hud').hidden = false;
+}
+function stopAudio() {
+  if (!game) return;
+  const t = audioCtx.currentTime;
+  game.gain.gain.setTargetAtTime(0, t, 0.15);
+  try { game.src.stop(t + 0.8); } catch {}
+  game.ticks.forEach((o) => { try { o.stop(); } catch {} });
+}
+// Time (s) relative to the count-in's first tick, corrected for output latency and the user's offset.
+function audioNow() {
+  const ts = audioCtx.getOutputTimestamp ? audioCtx.getOutputTimestamp() : null;
+  if (ts && ts.performanceTime > 0 && ts.contextTime > 0) {
+    const t = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+    if (Math.abs(t - audioCtx.currentTime) < 0.5) return t;
+  }
+  return audioCtx.currentTime - (audioCtx.outputLatency || 0);
+}
+function songTime() {
+  return audioNow() - game.startAt - (+$('offset').value) / 1000;
+}
+const stepTime = (j) => (j + COUNT_IN) * game.stepDur;   // step 0 = "beat one" = point 1
+
+// ---------- Geometry ----------
+function layout() {
+  const w = cv.width, h = cv.height, r = Math.min(w * 0.15, h * 0.27);
+  return { r, L: { x: w * 0.27, y: h * 0.54 }, R: { x: w * 0.73, y: h * 0.54 } };
+}
+function vertex(side, i, lay) {
+  const s = game.shapes[side], n = s.pts.length, [x, y] = s.pts[((i % n) + n) % n];
+  return { x: lay[side].x + x * lay.r, y: lay[side].y + y * lay.r };
+}
+
+// ---------- Hand tracking ----------
+let detMs = 8, skipFrame = false;
+let lastVideoTime = -1, coverT = { s: 1, ox: 0, oy: 0 };
+function track() {
+  if (!landmarker || !camReady || cam.readyState < 2 || cam.currentTime === lastVideoTime) return;
+  lastVideoTime = cam.currentTime;
+  if (detMs > 22 && (skipFrame = !skipFrame)) return;      // slow machine: track every other frame so the beat display stays smooth
+  const d0 = performance.now();
+  const res = landmarker.detectForVideo(cam, d0);
+  detMs += (performance.now() - d0 - detMs) * 0.1;
+  const px = (p) => ({ x: (1 - p.x) * cam.videoWidth * coverT.s + coverT.ox, y: p.y * cam.videoHeight * coverT.s + coverT.oy });   // mirrored
+  const pts = (res.landmarks || []).map((lm) => ({ ...px(lm[8]), all: [4, 8, 12, 16, 20].map((k) => px(lm[k])), lm: lm.map(px) }))   // index fingertip leads; any fingertip can score
+    .sort((a, b) => a.x - b.x);
+  let L = null, R = null;
+  if (pts.length >= 2) { L = pts[0]; R = pts[pts.length - 1]; }
+  else if (pts.length === 1) { if (pts[0].x < cv.width / 2) L = pts[0]; else R = pts[0]; }
+  for (const [side, p] of [['L', L], ['R', R]]) {
+    if (!p) { if (tips[side] && performance.now() - tips[side].seen > 450) tips[side] = null; continue; }   // ride out brief tracking dropouts
+    const prev = tips[side];
+    tips[side] = prev ? { x: prev.x + (p.x - prev.x) * 0.65, y: prev.y + (p.y - prev.y) * 0.65 } : { ...p };
+    Object.assign(tips[side], { rx: p.x, ry: p.y, all: p.all, lm: p.lm, seen: performance.now() });   // raw position is used for judging (no smoothing lag)
+    trails[side].push({ ...tips[side], t: performance.now() });
+    if (trails[side].length > 40) trails[side].shift();
+  }
+}
+
+// ---------- Judging ----------
+// Snap rule: on each beat, your fingertip must be inside the lit point's safe zone. The path you take doesn't matter.
+const ZONE = 0.8;        // safe-zone radius that counts, as a fraction of the shape radius
+const ZONE_DRAW = 0.55;  // drawn smaller than what counts, so edge hits go your way
+const camLag = () => (store.get('camLag2') ?? 0.03) + (game ? game.shift : 0);   // the camera + hand tracking show your hand about this many seconds late
+// A fingertip counts when it is within the zone and the lit point is (about) the closest point of that shape to it.
+function inZone(side, i, lay) {
+  const n = game.shapes[side].pts.length, v = vertex(side, i, lay);
+  return [tips.L, tips.R].some((tip) => tip && (tip.all || [{ x: tip.rx ?? tip.x, y: tip.ry ?? tip.y }]).some((p) => {
+    const d = Math.hypot(p.x - v.x, p.y - v.y);
+    if (d >= ZONE * lay.r) return false;
+    for (let k = 1; k < n; k++) { const o = vertex(side, i + k, lay); if (Math.hypot(p.x - o.x, p.y - o.y) < d * 0.8) return false; }
+    return true;
+  }));
+}
+// Records when each fingertip arrives at its point relative to the beat, to report average timing after the round.
+function measure(t, lay) {
+  if (game.out) return;
+  const tt = t - camLag(), m = Math.round(tt / game.stepDur - COUNT_IN);
+  if (m < 0 || m >= game.steps) return;
+  for (const side of ['L', 'R']) {
+    const st = game.meas[side], inZ = inZone(side, m, lay);
+    if (st.m === m && !st.inZ && inZ && !st.done) {
+      game.errs.push(tt - stepTime(m)); st.done = true;
+      if (game.errs.length >= 6) {                           // you're consistently early or late: move the scoring to where you are
+        const e = game.errs.splice(0).sort((a, b) => a - b);
+        game.shift = Math.min(0.4, Math.max(-0.3, game.shift + 0.7 * e[e.length >> 1]));
+      }
+    }
+    if (st.m !== m) { st.m = m; st.done = inZ; }             // already there when the beat's window opened: nothing to measure
+    st.inZ = inZ;
+  }
+}
+const PERFECT = 0.18;    // in the zone within ±180 ms of the beat
+const hitWindow = () => Math.min(0.4, game.stepDur * 0.5);   // each beat owns the full half-beat on either side
+// How close a snap was to the beat: 100 within 60 ms, sliding down to 50 at the edge of what still passes.
+const beatAccuracy = (err) => Math.round(100 - 50 * Math.min(1, Math.max(0, (Math.abs(err) - 0.06) / 0.16)));
+function setGrade(side, j, grade, lay) {
+  if (grade !== 'Miss') game.acc[side].push(beatAccuracy(game.arr[side] ?? 0));
+  game.grade[side] = grade;
+  if (grade === 'Perfect') { game.hits[side] += 1; game.score += 100; }
+  else if (grade === 'Good') { game.hits[side] += 0.9; game.score += 90; }
+  game.flashes.push({ ...vertex(side, j, lay), grade, t: performance.now() });   // shown the instant it happens
+  $('hudScore').textContent = game.score;
+}
+function judge(t, lay) {
+  if (game.out) return;
+  const j = game.judged + 1;
+  if (j >= game.steps) return;
+  const dt = t - camLag() - stepTime(j), w = hitWindow();
+  if (dt < -w) return;
+  if (dt <= w) {
+    game.looks = (game.looks || 0) + 1;
+    for (const side of ['L', 'R']) {
+      if (game.grade[side]) continue;
+      if (!inZone(side, j, lay)) continue;
+      if (game.arr[side] == null) game.arr[side] = dt;     // when the fingertip arrived, relative to the beat
+      if (dt < -PERFECT) game.early[side] = true;          // got there early: Perfect if still there on the beat
+      else setGrade(side, j, dt <= PERFECT ? 'Perfect' : 'Good', lay);
+    }
+    return;
+  }
+  for (const side of ['L', 'R']) if (!game.grade[side]) setGrade(side, j, game.early[side] || (game.looks || 0) < 3 ? 'Good' : 'Miss', lay);   // the game stalled through this beat: don't end the round for it
+  game.looks = 0;
+  const both = game.grade.L !== 'Miss' && game.grade.R !== 'Miss';
+  if (both) { game.sync++; game.combo++; game.score += 50 + Math.min(game.combo, 20) * 5; }
+  else game.combo = 0;
+  game.maxCombo = Math.max(game.maxCombo, game.combo);
+  if (!both) {                                               // one missed beat ends the round
+    game.out = { step: j, t: performance.now(), marks: ['L', 'R'].filter((sd) => game.grade[sd] === 'Miss').map((sd) => ({ side: sd, ...vertex(sd, j, lay) })) };
+    game.judged = j; stopAudio();
+    $('hudScore').textContent = game.score; $('hudCombo').textContent = 0;
+    setTimeout(finish, 1600);
+    return;
+  }
+  game.grade = { L: null, R: null }; game.early = { L: false, R: false }; game.arr = { L: null, R: null };
+  game.judged = j;
+  $('hudScore').textContent = game.score; $('hudCombo').textContent = game.combo;
+  if (j === game.steps - 1) setTimeout(finish, 500);
+}
+function finish() {
+  if (!game) return;
+  const gm = game; stopAudio(); game = null;
+  const pct = (v) => Math.round((v / gm.steps) * 100) + '%';
+  const acc = (gm.hits.L + gm.hits.R) / (2 * gm.steps);
+  const prev = store.get(bestKey()) || 0, best = Math.max(prev, gm.score);
+  store.set(bestKey(), best);
+  $('resTitle').textContent = gm.out ? `Out on beat ${gm.out.step + 1} of ${gm.steps}` : 'In perfect sync';
+  $('resSub').textContent = `Level ${sel.level + 1} · ${sel.diff === 'easy' ? 'Easy' : 'Medium'} · ${sel.div === 2 ? 'Slow' : 'Original'}` + (gm.score > prev && prev ? ' · New best' : '');
+  $('resScore').textContent = gm.score;
+  const onBeat = (a) => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) + '%' : '–';   // timing accuracy over the beats you hit
+  $('resLeft').textContent = onBeat(gm.acc.L); $('resRight').textContent = onBeat(gm.acc.R);
+  $('resSync').textContent = `${gm.sync} / ${gm.steps}`; $('resStreak').textContent = gm.maxCombo; $('resBest').textContent = best;
+  // Keep the timing shift learned this round for the next one, and say so.
+  const fps = Math.round(gm.frames / ((performance.now() - gm.t0) / 1000)), ms = Math.round(gm.shift * 100) * 10;
+  if (gm.shift) store.set('camLag2', Math.min(0.4, Math.max(-0.3, (store.get('camLag2') ?? 0.03) + gm.shift)));
+  $('resAdjust').hidden = true;
+  $('resTiming').textContent = [
+    gm.out ? `One missed beat ends the round. You missed with your ${gm.out.marks.map((m) => m.side === 'L' ? 'left' : 'right').join(' and ')} hand.` : '',
+    Math.abs(ms) >= 40 ? `Scoring moved ${Math.abs(ms)} ms ${ms > 0 ? 'later' : 'earlier'} to match your timing. It carries over to your next round.` : '',
+    fps < 24 ? `The game ran at ${fps} fps, which makes the beat look jumpy. Closing other tabs or apps helps.` : '',
+  ].filter(Boolean).join(' ');
+  $('hud').hidden = true; $('results').hidden = false;
+}
+
+// ---------- Drawing ----------
+const COLORS = { L: '#4ade80', R: '#ff7eb6' };
+function resize() {
+  const d = Math.min(devicePixelRatio || 1, 2);
+  cv.width = Math.round(innerWidth * d); cv.height = Math.round(innerHeight * d);
+}
+addEventListener('resize', resize); resize();
+
+function drawVideo() {
+  const w = cv.width, h = cv.height;
+  g.fillStyle = '#0e0f13'; g.fillRect(0, 0, w, h);
+  if (!camReady || !cam.videoWidth) return;
+  const s = Math.max(w / cam.videoWidth, h / cam.videoHeight);
+  coverT = { s, ox: (w - cam.videoWidth * s) / 2, oy: (h - cam.videoHeight * s) / 2 };
+  g.save(); g.translate(w, 0); g.scale(-1, 1);
+  g.drawImage(cam, coverT.ox, coverT.oy, cam.videoWidth * s, cam.videoHeight * s);
+  g.restore();
+  g.fillStyle = 'rgba(10,11,15,.35)'; g.fillRect(0, 0, w, h);
+}
+function drawShape(side, lay, t) {
+  const s = game.shapes[side], n = s.pts.length, col = COLORS[side], u = lay.r / 100;
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  g.beginPath();
+  s.pts.forEach((_, i) => { const v = vertex(side, i, lay); i ? g.lineTo(v.x, v.y) : g.moveTo(v.x, v.y); });
+  if (s.closed) g.closePath();
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 6 * u; g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2.5 * u; g.stroke();
+
+  // The lit point switches exactly on the beat and stays lit until the next beat.
+  const pos = t / game.stepDur - COUNT_IN, cur = Math.floor(pos);
+  const since = (pos - cur) * game.stepDur;                     // seconds since the last beat
+  const pop = Math.max(0, 1 - since / 0.18);                    // 1 on the beat, fades fast
+  const playing = cur < game.steps;
+  const lit = cur >= 0 && playing ? cur % n : -1;
+  const nextUp = playing && cur + 1 < game.steps ? (Math.max(cur, -1) + 1) % n : -1;
+
+  for (let i = 0; i < n; i++) {
+    const v = vertex(side, i, lay), isLit = i === lit, isNext = i === nextUp && !isLit;
+    if (isLit) {                                                // safe zone: be inside this circle on the beat
+      g.beginPath(); g.arc(v.x, v.y, ZONE_DRAW * lay.r, 0, 7);
+      g.fillStyle = col; g.globalAlpha = 0.08 + 0.16 * pop; g.fill();
+      g.globalAlpha = 0.55 + 0.35 * pop; g.strokeStyle = col; g.lineWidth = (1.5 + 2 * pop) * u; g.stroke(); g.globalAlpha = 1;
+    } else if (isNext) {
+      g.beginPath(); g.arc(v.x, v.y, ZONE_DRAW * lay.r, 0, 7);
+      g.setLineDash([5 * u, 8 * u]); g.strokeStyle = col; g.globalAlpha = 0.28; g.lineWidth = 1.5 * u; g.stroke();
+      g.setLineDash([]); g.globalAlpha = 1;
+    }
+    const rad = (10 + (isLit ? 4 * pop : 0)) * u;
+    g.beginPath(); g.arc(v.x, v.y, rad, 0, 7);
+    g.fillStyle = isLit ? col : '#1b1d25'; g.fill();
+    g.lineWidth = 2.5 * u; g.strokeStyle = isLit ? '#fff' : col; g.stroke();
+    g.fillStyle = isLit ? '#0e0f13' : '#fff'; g.font = `700 ${12 * u}px -apple-system, sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(i + 1, v.x, v.y + u);
+  }
+}
+// One, two, three, four: a pip lights on every beat.
+function drawCount(lay, t) {
+  const pos = t / game.stepDur, cur = Math.floor(pos);
+  if (cur < 0 || cur - COUNT_IN >= game.steps) return;
+  const pop = Math.max(0, 1 - (pos - cur) * game.stepDur / 0.18), u = lay.r / 100;
+  const cx = cv.width / 2, y = cv.height * 0.13, gap = 30 * u;
+  for (let i = 0; i < 4; i++) {
+    const on = i === cur % 4, x = cx + (i - 1.5) * gap;
+    g.beginPath(); g.arc(x, y, (on ? 11 + 3 * pop : 8) * u, 0, 7);
+    g.fillStyle = on ? '#f0932b' : 'rgba(20,22,28,.8)'; g.fill();
+    g.lineWidth = 2 * u; g.strokeStyle = on ? '#fff' : '#555a6e'; g.stroke();
+    g.fillStyle = on ? '#1a1205' : '#9a9ca8'; g.font = `700 ${10 * u}px -apple-system, sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(i + 1, x, y + u);
+  }
+}
+function drawTips(lay) {
+  const now = performance.now(), u = lay.r / 100;
+  for (const side of ['L', 'R']) {
+    const tr = trails[side].filter((p) => now - p.t < 450);
+    g.strokeStyle = COLORS[side]; g.lineCap = 'round';
+    for (let i = 1; i < tr.length; i++) {
+      g.globalAlpha = (1 - (now - tr[i].t) / 450) * 0.8; g.lineWidth = 6 * u * (i / tr.length);
+      g.beginPath(); g.moveTo(tr[i - 1].x, tr[i - 1].y); g.lineTo(tr[i].x, tr[i].y); g.stroke();
+    }
+    g.globalAlpha = 1;
+    const p = tips[side]; if (!p) continue;
+    g.beginPath(); g.arc(p.x, p.y, 11 * u, 0, 7); g.fillStyle = COLORS[side]; g.fill();
+    g.lineWidth = 3 * u; g.strokeStyle = '#fff'; g.stroke();
+  }
+}
+// Round over: a red X on each missed point and a big one in the middle.
+function drawOut(lay) {
+  const o = game.out, u = lay.r / 100, k = Math.min(1, (performance.now() - o.t) / 180);
+  const cross = (x, y, r, w) => { g.beginPath(); g.moveTo(x - r, y - r); g.lineTo(x + r, y + r); g.moveTo(x + r, y - r); g.lineTo(x - r, y + r); g.lineWidth = w; g.stroke(); };
+  g.fillStyle = `rgba(10,10,14,${0.45 * k})`; g.fillRect(0, 0, cv.width, cv.height);
+  g.strokeStyle = '#ff5252'; g.lineCap = 'round'; g.shadowColor = '#ff5252'; g.shadowBlur = 18 * u;
+  for (const m of o.marks) cross(m.x, m.y, 26 * u * k, 7 * u);
+  cross(cv.width / 2, cv.height * 0.42, 70 * u * (0.6 + 0.4 * k), 16 * u);
+  g.shadowBlur = 0;
+  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.font = `800 ${34 * u}px -apple-system, sans-serif`; g.fillText('Missed', cv.width / 2, cv.height * 0.42 + 125 * u);
+  g.font = `600 ${17 * u}px -apple-system, sans-serif`; g.globalAlpha = 0.8;
+  g.fillText(`Round over on beat ${o.step + 1} of ${game.steps}`, cv.width / 2, cv.height * 0.42 + 155 * u); g.globalAlpha = 1;
+}
+// Intro: map each hand's skeleton while the song's intro plays, then fade it out before point 1.
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function drawHandScan(lay, alpha) {
+  const u = lay.r / 100, now = performance.now();
+  let found = 0;
+  for (const side of ['L', 'R']) {
+    const lm = tips[side] && tips[side].lm; if (!lm) continue;
+    found++;
+    const col = COLORS[side];
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const p of lm) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    const pad = 22 * u; x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    alpha *= 0.55;
+    g.save(); g.globalAlpha = alpha; g.lineCap = 'round'; g.lineJoin = 'round';
+    // skeleton
+    g.strokeStyle = col; g.shadowColor = col; g.shadowBlur = 5 * u; g.lineWidth = 1.2 * u;
+    g.beginPath(); for (const [a, b] of BONES) { g.moveTo(lm[a].x, lm[a].y); g.lineTo(lm[b].x, lm[b].y); } g.stroke();
+    g.shadowBlur = 0;
+    lm.forEach((p, i) => {
+      const tip = i % 4 === 0 && i > 0, pulse = tip ? 1 + 0.35 * Math.sin(now / 140 + i) : 1;
+      g.beginPath(); g.arc(p.x, p.y, (tip ? 3.5 : 1.8) * u * pulse, 0, 7); g.fillStyle = tip ? '#fff' : col; g.fill();
+      if (tip) { g.lineWidth = 1 * u; g.strokeStyle = col; g.stroke(); }
+    });
+    // corner brackets
+    const c = 12 * u; g.strokeStyle = col; g.lineWidth = 1.2 * u;
+    g.beginPath();
+    for (const [x, y, dx, dy] of [[x0, y0, 1, 1], [x1, y0, -1, 1], [x1, y1, -1, -1], [x0, y1, 1, -1]]) { g.moveTo(x + dx * c, y); g.lineTo(x, y); g.lineTo(x, y + dy * c); }
+    g.stroke();
+    // sweeping scan line
+    const sy = y0 + (y1 - y0) * (0.5 + 0.5 * Math.sin(now / 320));
+    const grad = g.createLinearGradient(x0, 0, x1, 0);
+    grad.addColorStop(0, 'transparent'); grad.addColorStop(0.5, col); grad.addColorStop(1, 'transparent');
+    g.strokeStyle = grad; g.lineWidth = 1 * u; g.globalAlpha = alpha * 0.8;
+    g.beginPath(); g.moveTo(x0, sy); g.lineTo(x1, sy); g.stroke();
+    // label
+    g.globalAlpha = alpha; g.fillStyle = col; g.font = `500 ${9 * u}px ui-monospace, Menlo, monospace`; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    g.fillText(`${side === 'L' ? 'LEFT' : 'RIGHT'} HAND · LOCKED`, x0, y0 - 8 * u);
+    g.restore();
+  }
+  g.save(); g.globalAlpha = alpha * 0.75; g.textAlign = 'center'; g.fillStyle = 'rgba(255,255,255,.9)';
+  g.font = `500 ${cv.height * 0.032}px -apple-system, sans-serif`;
+  g.fillText(found === 2 ? 'Hands locked' : found === 1 ? 'Show your other hand' : 'Show both hands', cv.width / 2, cv.height * 0.2);
+  g.restore();
+}
+function drawFlashes(lay) {
+  const now = performance.now(), u = lay.r / 100;
+  game.flashes = game.flashes.filter((f) => now - f.t < 600);
+  for (const f of game.flashes) {
+    const k = (now - f.t) / 600;
+    g.globalAlpha = (1 - k) * 0.85;
+    g.fillStyle = f.grade === 'Perfect' ? '#7bed9f' : f.grade === 'Good' ? '#ffd166' : '#ff6b6b';
+    g.font = `700 ${15 * u}px -apple-system, sans-serif`; g.textAlign = 'center';
+    g.fillText(f.grade, f.x, f.y - (22 + 20 * k) * u);
+    if (f.grade !== 'Miss') { g.beginPath(); g.arc(f.x, f.y, (12 + 26 * k) * u, 0, 7); g.strokeStyle = g.fillStyle; g.lineWidth = 2 * u; g.stroke(); }
+    g.globalAlpha = 1;
+  }
+}
+
+function frame() {
+  drawVideo();
+  track();
+  if (game) {
+    const lay = layout(), t = songTime();
+    game.frames++; measure(t, lay);
+    judge(t, lay);
+    if (game) {
+      drawShape('L', lay, t); drawShape('R', lay, t);
+      drawCount(lay, t); drawFlashes(lay); drawTips(lay);
+      const c = Math.floor(t / game.stepDur) + 1;              // count-in: 1, 2, 3, 4, then the song starts on 1
+      $('big').textContent = c >= 1 && c <= COUNT_IN ? c : '';
+      const scanA = Math.min(1, Math.max(0, (3.5 * game.stepDur - t) / (1.5 * game.stepDur)));   // intro hand scan, gone before point 1
+      if (scanA > 0) drawHandScan(lay, scanA);
+      if (game.out) { drawOut(lay); $('big').textContent = ''; }
+      $('progress').style.width = `${Math.min(100, Math.max(0, (game.judged + 1) / game.steps * 100))}%`;
+      if (!tips.L && !tips.R && t > 0) {
+        g.fillStyle = 'rgba(255,255,255,.85)'; g.font = `600 ${cv.height * 0.026}px -apple-system, sans-serif`; g.textAlign = 'center';
+        g.fillText('Raise both index fingers so the camera can see them', cv.width / 2, cv.height * 0.95);
+      }
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+buildGrid();
+requestAnimationFrame(frame);
+
+// Exposed for testing only.
+window.__rhythm = { get game() { return game; }, tips, sel, layout, vertex, stepTime, songTime, SHAPES, LEVELS,
+  async startWithoutCamera() { await ensureAudio(); startRound(); }, startCalib, tapCalib, BEAT, P, audioNow };
+</script>
+</body>
+</html>
