@@ -104,6 +104,14 @@
     ul { list-style: none; }
     .made li { padding: 1rem 0; border-bottom: 1px dashed var(--rule); }
     .made li:last-child { border-bottom: 0; }
+    .made li.has-thumb { display: flow-root; }
+    .thumb {
+      float: right; width: 9.5rem; margin: 0.2rem 0 0.5rem 1.25rem;
+      border-radius: 6px; border: 1px solid var(--rule); overflow: hidden;
+      transform: rotate(-1.5deg); transition: transform 0.2s ease;
+    }
+    .thumb:hover { transform: rotate(0deg) scale(1.03); }
+    .thumb svg { display: block; width: 100%; height: auto; }
     .made h3 { font-size: 1.05rem; font-weight: 600; display: inline; }
     .made .tag { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-faint); margin-left: 0.5rem; white-space: nowrap; }
     .made p { color: var(--ink-soft); margin: 0.25rem 0 0.4rem; }
@@ -135,6 +143,7 @@
       body { font-size: 16px; }
       .bar { margin-bottom: 2rem; }
       .about img { width: 7rem; height: 9rem; margin-left: 1rem; }
+      .thumb { width: 7rem; margin-left: 1rem; }
       .timeline li { grid-template-columns: 1.25rem 1fr; }
       .timeline .year, .timeline .what { grid-column: 2; }
       .made .tag { display: block; margin: 0.1rem 0 0; white-space: normal; }
@@ -182,7 +191,23 @@
 
       <h2 id="made">Things I've made</h2>
       <ul class="made">
-        <li>
+        <li class="has-thumb">
+          <a class="thumb" href="polysnap/" aria-label="Play Polysnap">
+            <svg viewBox="0 0 160 120" role="img" aria-hidden="true">
+              <rect width="160" height="120" fill="#14161C"/>
+              <g fill="none" stroke="#fff" stroke-opacity="0.35" stroke-width="1"><circle cx="65" cy="12" r="3"/><circle cx="75" cy="12" r="3"/><circle cx="85" cy="12" r="3"/><circle cx="95" cy="12" r="3"/></g>
+              <circle cx="75" cy="12" r="3" fill="#f0932b"/>
+              <line x1="42" y1="30" x2="42" y2="98" stroke="#4ade80" stroke-width="1.5" opacity="0.7"/>
+              <circle cx="42" cy="98" r="12" fill="#4ade80" opacity="0.18"/>
+              <circle cx="42" cy="30" r="4" fill="#14161C" stroke="#4ade80" stroke-width="1.5"/>
+              <circle cx="42" cy="98" r="4" fill="#4ade80"/>
+              <polygon points="96,98 96,30 136,98" fill="none" stroke="#ff7eb6" stroke-width="1.5" opacity="0.7"/>
+              <circle cx="96" cy="30" r="12" fill="#ff7eb6" opacity="0.18"/>
+              <circle cx="96" cy="98" r="4" fill="#14161C" stroke="#ff7eb6" stroke-width="1.5"/>
+              <circle cx="136" cy="98" r="4" fill="#14161C" stroke="#ff7eb6" stroke-width="1.5"/>
+              <circle cx="96" cy="30" r="4" fill="#ff7eb6"/>
+            </svg>
+          </a>
           <h3><mark>Polysnap</mark></h3><span class="tag">webcam game · hand tracking</span>
           <p>A webcam game that tests your bilateral coordination. Each hand snaps to its own shape on the beat, and one missed beat ends the round.</p>
           <div class="go"><a href="polysnap/">Play it</a><span class="scribble">← needs a camera, try it!</span></div>
