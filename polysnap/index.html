@@ -725,5 +725,17 @@ requestAnimationFrame(frame);
 window.__rhythm = { get game() { return game; }, tips, sel, layout, vertex, stepTime, songTime, SHAPES, LEVELS,
   async startWithoutCamera() { await ensureAudio(); startRound(); }, startCalib, tapCalib, BEAT, P, audioNow };
 </script>
+  <!-- Analytics: GoatCounter (no cookies). Dashboard: https://jennyhuynh.goatcounter.com -->
+  <script data-goatcounter="https://jennyhuynh.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+  <script>
+    // Count a game start as an event; the path names the game, the title adds detail
+    function trackEvent(path, title) { try { window.goatcounter && window.goatcounter.count && window.goatcounter.count({ path: path, title: title || path, event: true }); } catch (e) {} }
+  </script>
+  <script>
+    document.getElementById("start").addEventListener("click", () => {
+      const r = window.__rhythm, s = r && r.sel;
+      trackEvent("game-start/polysnap", s ? `Polysnap · ${s.diff} · level ${s.level + 1} · ${s.div === 2 ? "slow" : "original"}` : "Polysnap");
+    });
+  </script>
 </body>
 </html>
